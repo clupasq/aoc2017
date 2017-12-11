@@ -1,4 +1,5 @@
 import Test.Hspec
+import Test.QuickCheck
 
 {-
 
@@ -43,19 +44,29 @@ destination = foldl (flip move)
 path :: Coords -> [Direction] -> [Coords]
 path = scanl (flip move)
 
-distance :: Coords -> Coords -> Int
-distance (y1, x1) (y2, x2) | x1 == x2  = ady
+distanceSlow :: Coords -> Coords -> Int
+distanceSlow (y1, x1) (y2, x2) | x1 == x2  = ady
                            | y1 == y2  = adx
                            | dy == -dx = adx
                            | dy == dx  = 2 * adx
                            | dx >= 0 && dy >= 0 = dx + dy
                            | dx <  0 && dy <  0 = adx + ady
-                           | dx <  0            = 1 + distance (y1, x1) (y2-1, x2+1)
-                           | dy <  0            = 1 + distance (y1, x1) (y2+1, x2-1)
+                           | dx <  0            = 1 + distanceSlow (y1, x1) (y2-1, x2+1)
+                           | dy <  0            = 1 + distanceSlow (y1, x1) (y2+1, x2-1)
   where dy  = y2 - y1
         dx  = x2 - x1
         ady = abs dy
         adx = abs dx
+
+distanceFast :: Coords -> Coords -> Int
+distanceFast (y1, x1) (y2, x2) | signum dx == signum dy = adx + ady
+                               | otherwise              = max adx ady
+  where dy = y2-y1
+        dx = x2-x1
+        ady = abs dy
+        adx = abs dx
+
+distance = distanceFast
 
 origin :: Coords
 origin = (0, 0)
@@ -132,6 +143,10 @@ main = hspec $ do
         distance (0, 0) (2, -1) `shouldBe` 2
         distance (0, 0) (-2, 1) `shouldBe` 2
 
+      it "distance fast and slow return the same" $ do
+        quickCheck (\x y -> distanceSlow x y == distanceFast x y)
+
+
 
 
     describe "Questions" $ do
@@ -143,8 +158,7 @@ main = hspec $ do
         print $ "Final coords: " ++ (show final)
         print $ "Distance:     " ++ (show $ distance origin final)
 
-      it "answers question #1" $ do
-        -- todo: make distance calculation faster (currently takes ~28s)
+      it "answers question #2" $ do
         input <- readFile "input/day11.in"
         let dirs = map read $ words $ map toUpper input
         let visited = path origin dirs
