@@ -1,4 +1,5 @@
 import Test.Hspec
+import Debug.Trace
 
 import Data.Char
 import qualified Data.Map as M
@@ -19,15 +20,18 @@ data Instruction = Set Reg Expr
 data Result = None
             | Send Int
             | Received Int
+            | WaitSnd
             | Stop
   deriving (Eq, Show)
 
 type Registers = M.Map Reg Int
 
-data CPU = CPU { regs         :: Registers,
-                 stack        :: [Int],
+data CPU = CPU { name         :: String,
+                 regs         :: Registers,
+                 queue        :: [Int],
                  instructions :: [Instruction],
                  pointer      :: Int,
+                 sndCount     :: Int,
                  lastResult   :: Result }
   deriving (Eq, Show)
 
@@ -76,10 +80,12 @@ exec cpu
         cpu' { regs = M.insert reg ((eval cpu $ Left reg) `mod` (eval cpu expr)) rs }
       (Snd reg     ) ->
         let x = eval cpu $ Left reg
-            in cpu' { stack = x : (stack cpu) }
+            in cpu' { queue = x : (queue cpu) }
+            -- in this case, the queue is really a stack...
+            -- ... but in the second part it *is* a queue
       (Rcv reg     ) ->
         if ((eval cpu $ Left reg) > 0)
-           then cpu' { lastResult = Received s, stack = ss }
+           then cpu' { lastResult = Received q, queue = qq }
            else cpu'
       (Jgz ex1 ex2)  ->
         if (eval cpu ex1) > 0
@@ -91,7 +97,7 @@ exec cpu
         instr = is !! p
         cpu' = cpu { pointer = (pointer cpu + 1), lastResult = None }
         rs   = regs cpu
-        (s:ss) = stack cpu
+        (q:qq) = queue cpu
 
 
 readInstructions :: IO [Instruction]
@@ -103,8 +109,10 @@ mkCPU :: [Instruction] -> CPU
 mkCPU is = CPU { instructions = is,
                  pointer      = 0,
                  regs         = M.empty,
-                 stack        = [],
-                 lastResult   = None
+                 queue        = [],
+                 lastResult   = None,
+                 name         = "",
+                 sndCount     = 0
                }
 
 hasReceived :: CPU -> Bool
@@ -113,23 +121,48 @@ hasReceived cpu = case lastResult cpu of
                         _            -> False
 
 
+crtInstruction :: CPU -> Instruction
+crtInstruction cpu = (instructions cpu) !! (pointer cpu)
+
+appendToQueue :: CPU -> Int -> CPU
+appendToQueue cpu i = cpu { queue = queue cpu ++ [i]}
+
+incrSnd :: CPU -> CPU
+incrSnd cpu = cpu { sndCount = sndCount cpu + 1 }
 
 
+deadlocked :: (CPU, CPU) -> Bool
+deadlocked (cpu0, cpu1) = waiting cpu0 && waiting cpu1
+  where waiting c = lastResult c == WaitSnd
 
+execDuet :: (CPU, CPU) -> (CPU, CPU)
+execDuet (cpu0, cpu1) =
+  case crtInstruction cpu0 of
+    (Snd reg) -> let x = eval cpu0 $ Left reg
+                     in (appendToQueue cpu1 x, incrSnd cpu0')
+    (Rcv reg) -> case queue cpu0 of
+                    (q:qq) -> (cpu0' { queue = qq,
+                                       regs  = M.insert reg q (regs cpu0)
+                                     }, cpu1)
+                    []     -> (cpu1, cpu0 { lastResult = WaitSnd })
+    _         -> (exec cpu0, cpu1)
+  where cpu0' = cpu0 { pointer = pointer cpu0 + 1, lastResult = None}
 
 
 
 
 tests = hspec $ describe "Duet" $ do
 
-  let testCPU = CPU { regs         = M.fromList [('x', 1),
-                                           ('y', 2),
-                                           ('z', 7)],
-                instructions = [],
-                stack        = [],
-                pointer      = 0,
-                lastResult   = None
-              }
+  let testCPU = CPU { regs         = M.fromList [ ('x', 1),
+                                                  ('y', 2),
+                                                  ('z', 7)],
+                      name         = "test",
+                      instructions = [],
+                      queue        = [],
+                      pointer      = 0,
+                      sndCount     = 0,
+                      lastResult   = None
+                    }
 
   describe "Parsing" $ do
 
@@ -162,6 +195,11 @@ tests = hspec $ describe "Duet" $ do
       parse "set a p" `shouldBe` Set 'a' (Left 'p')
 
 
+debugMsg cpu = (name cpu, crtInstruction cpu)
+
+traceExecDuet :: (CPU, CPU) -> (CPU, CPU)
+traceExecDuet (x, y) = execDuet $ trace (show (debugMsg x, debugMsg y)) (x, y)
+
 main = do
   tests
   is <- readInstructions
@@ -170,6 +208,18 @@ main = do
   putStrLn "Question #1"
   let state = head [state | state <- iterate exec cpu, hasReceived state]
   print $ lastResult state
+
+
+  putStrLn "Question #2"
+  let cpu0 = cpu { name = "cpu0", regs = M.fromList [('p', 0)]}
+  let cpu1 = cpu { name = "cpu1", regs = M.fromList [('p', 1)]}
+
+  let final = until deadlocked traceExecDuet (cpu0, cpu1)
+  let (x, y) = final
+  putStrLn $ (name x) ++ " sent " ++ (show $ sndCount x) ++ " times."
+  putStrLn $ (name y) ++ " sent " ++ (show $ sndCount y) ++ " times."
+
+  putStrLn "Done"
 
 
 
