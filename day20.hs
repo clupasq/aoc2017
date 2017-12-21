@@ -36,7 +36,7 @@ linearNubBy f (x:y:xs) | f x == f y =     rest
 linearNubBy _        x = x
 
 removeColliding :: [Particle] -> [Particle]
-removeColliding ps = linearNubBy pos $ sortOn pos ps
+removeColliding ps = concat $ filter ((==1).length) $ groupBy (\x y -> pos x == pos y) $ sortOn pos ps
 
 mkParticle :: (String, Id) -> Particle
 mkParticle (xs, id) = Particle id pos velo acc
@@ -66,13 +66,8 @@ main = do
   print slowestGrowing
 
 
-  let muchLater = head $ drop 5000 $ iterate updateWorld ps
-  print $ length $ muchLater
-
-
+  let counts = map length $ take 100 $ iterate updateWorld ps
+  print $ counts
 
   print "done"
-
-
-
 
