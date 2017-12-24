@@ -107,18 +107,13 @@ tests = hspec $ describe "Sporifica Virus" $ do
     let (v, w, i) = after100
     i `shouldBe` 26
 
-  it "can count infections 2'" $ do
-    let later = (iterate step' initialState) !! 1000000
-    let (v, w, i) = later
-    i `shouldBe` 26
-
-
-  -- it "Question #2" $ do
-  --   mapText <- readFile "input/day22.in"
-  --   let actualMap = parse mapText
-  --   let after10000 = (iterate step (initialVirus, actualMap, 0)) !! 10000
-  --   let (v, w, s) = after10000
-  --   print s
+  it "Question #2" $ do
+    -- slow, stackoverflow. Ruby...
+    mapText <- readFile "input/day22.in"
+    let actualMap = parse mapText
+    let muchLater = (iterate step (initialVirus, actualMap, 0)) !! 10000000
+    let (v, w, s) = muchLater
+    print s
 
 
 
